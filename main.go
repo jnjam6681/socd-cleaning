@@ -17,17 +17,20 @@ const (
 
 type Direction struct {
 	Left, Right, Up, Down bool
-	LastInput             string
 }
 
 type CleaningMethod int
 
 const (
 	Neutral CleaningMethod = iota
-	LastInputPriority
+	PriorityDirection
+	Alternating
 )
 
-var kb keybd_event.KeyBonding
+var (
+	kb               keybd_event.KeyBonding
+	alternatingState bool
+)
 
 func init() {
 	var err error
@@ -42,24 +45,12 @@ func getKeyState(key int) bool {
 }
 
 func getDirection() Direction {
-	dir := Direction{}
-	if getKeyState(VK_A) {
-		dir.Left = true
-		dir.LastInput = "Left"
+	return Direction{
+		Left:  getKeyState(VK_A),
+		Right: getKeyState(VK_D),
+		Up:    getKeyState(VK_W),
+		Down:  getKeyState(VK_S),
 	}
-	if getKeyState(VK_D) {
-		dir.Right = true
-		dir.LastInput = "Right"
-	}
-	if getKeyState(VK_W) {
-		dir.Up = true
-		dir.LastInput = "Up"
-	}
-	if getKeyState(VK_S) {
-		dir.Down = true
-		dir.LastInput = "Down"
-	}
-	return dir
 }
 
 func cleanSOCD(dir Direction, method CleaningMethod) Direction {
@@ -72,23 +63,26 @@ func cleanSOCD(dir Direction, method CleaningMethod) Direction {
 			cleaned.Right = false
 		}
 		if dir.Up && dir.Down {
-			cleaned.Up = true
+			cleaned.Up = false
 			cleaned.Down = false
 		}
-	case LastInputPriority:
+	case PriorityDirection:
 		if dir.Left && dir.Right {
-			if dir.LastInput == "Left" {
-				cleaned.Right = false
-			} else {
-				cleaned.Left = false
-			}
+			cleaned.Right = false // Left has priority
 		}
 		if dir.Up && dir.Down {
-			if dir.LastInput == "Up" {
-				cleaned.Down = false
-			} else {
-				cleaned.Up = false
-			}
+			cleaned.Down = false // Up has priority
+		}
+	case Alternating:
+		if dir.Left && dir.Right {
+			alternatingState = !alternatingState
+			cleaned.Left = alternatingState
+			cleaned.Right = !alternatingState
+		}
+		if dir.Up && dir.Down {
+			alternatingState = !alternatingState
+			cleaned.Up = alternatingState
+			cleaned.Down = !alternatingState
 		}
 	}
 
@@ -136,7 +130,7 @@ func directionToString(dir Direction) string {
 
 func main() {
 	fmt.Println("SOCD Cleaner started. Use A(Left), D(Right), W(Up), S(Down). Press Ctrl+C to exit.")
-	fmt.Println("Press 'N' for Neutral cleaning, 'L' for Last Input Priority cleaning")
+	fmt.Println("Press 'N' for Neutral, 'P' for Priority Direction, 'A' for Alternating")
 
 	cleaningMethod := Neutral
 
@@ -145,9 +139,13 @@ func main() {
 			cleaningMethod = Neutral
 			fmt.Println("\nSwitched to Neutral cleaning")
 		}
+		if getKeyState('P') {
+			cleaningMethod = PriorityDirection
+			fmt.Println("\nSwitched to Priority Direction cleaning")
+		}
 		if getKeyState('L') {
-			cleaningMethod = LastInputPriority
-			fmt.Println("\nSwitched to Last Input Priority cleaning")
+			cleaningMethod = Alternating
+			fmt.Println("\nSwitched to Alternating cleaning")
 		}
 
 		rawDir := getDirection()
@@ -155,7 +153,7 @@ func main() {
 
 		fmt.Printf("\rRaw: %-20s | Cleaned: %-20s | Method: %-20v",
 			directionToString(rawDir), directionToString(cleanedDir),
-			map[CleaningMethod]string{Neutral: "Neutral", LastInputPriority: "Last Input Priority"}[cleaningMethod])
+			map[CleaningMethod]string{Neutral: "Neutral", PriorityDirection: "Priority Direction", Alternating: "Alternating"}[cleaningMethod])
 
 		simulateKeyPress(cleanedDir)
 
